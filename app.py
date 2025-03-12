@@ -7,6 +7,7 @@ import httpx
 class Settings(BaseSettings):
     my_secret_token: str
     telegram_bot_token: str
+    new_user_telegram_group_chat_id: str
 
     class Config:
         env_file = ".env"
@@ -51,3 +52,54 @@ async def webhook(token: str, request: Request, response: Response):
     
     response.status_code = telegram_response.status_code
     return telegram_response.json()
+
+@app.post("/telegram/update/{token}")
+async def telegram_update(token: str, request: Request, response: Response):
+    """
+    Endpoint для отримання update від Telegram.
+    Якщо update містить команду /start (тобто користувач стартував бота),
+    то надсилається повідомлення про нового підписника до вказаної групи.
+    """
+    # Перевірка токена
+    if token != settings.my_secret_token:
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+    try:
+        update = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=422, detail="Invalid JSON") from e
+
+    # Перевірка, чи це update з повідомленням
+    message_data = update.get("message")
+    if message_data:
+        text = message_data.get("text", "")
+        # Якщо користувач надіслав /start, це може означати, що він підписався
+        if text == "/start":
+            user = message_data.get("from", {})
+            first_name = user.get("first_name", "")
+            username = user.get("username", "")
+            user_id = user.get("id", "")
+            
+            # Формування повідомлення для групи
+            group_text = (
+                f"<b>Новий підписник на чатбота!</b>\n"
+                f"ID: {user_id}\n"
+                f"Ім'я: {first_name}\n"
+                f"Username: {username}"
+            )
+            
+            group_message = TelegramMessage(
+                chat_id=settings.new_user_telegram_group_chat_id,
+                text=group_text,
+                parse_mode="HTML"
+            )
+            
+            async with httpx.AsyncClient() as client:
+                telegram_response = await client.post(
+                    TELEGRAM_SEND_MESSAGE_URL, json=group_message.dict()
+                )
+            response.status_code = telegram_response.status_code
+            return telegram_response.json()
+    
+    # Якщо update не містить потрібних даних, нічого не робимо
+    return {"detail": "No subscription event detected"}
