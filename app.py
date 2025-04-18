@@ -1,3 +1,4 @@
+from typing import List, Optional
 from fastapi import FastAPI, HTTPException, Response, Request
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
@@ -16,11 +17,20 @@ settings = Settings()
 
 app = FastAPI()
 
-# Модель з обов’язковими полями chat_id та text
+# Моделі для inline-клавіатури
+class InlineKeyboardButton(BaseModel):
+    text: str
+    url: str
+
+class InlineKeyboardMarkup(BaseModel):
+    inline_keyboard: List[List[InlineKeyboardButton]]
+
+# Оновлена модель TelegramMessage із reply_markup
 class TelegramMessage(BaseModel):
     chat_id: int
     text: str
-    parse_mode: str = None
+    parse_mode: Optional[str] = None
+    reply_markup: Optional[InlineKeyboardMarkup] = None
 
 TELEGRAM_SEND_MESSAGE_URL = f"https://api.telegram.org/bot{settings.telegram_bot_token}/sendMessage"
 
@@ -45,11 +55,11 @@ async def webhook(token: str, request: Request, response: Response):
         message = TelegramMessage(**payload)
     except Exception as e:
         raise HTTPException(status_code=422, detail="Invalid payload") from e
-    
+
     # Пересилаємо дані до Telegram Bot API
     async with httpx.AsyncClient() as client:
-        telegram_response = await client.post(TELEGRAM_SEND_MESSAGE_URL, json=message.dict())
-    
+        telegram_response = await client.post(TELEGRAM_SEND_MESSAGE_URL, json=message.dict(exclude_none=True))
+
     response.status_code = telegram_response.status_code
     return telegram_response.json()
 
@@ -100,6 +110,6 @@ async def telegram_update(token: str, request: Request, response: Response):
                 )
             response.status_code = telegram_response.status_code
             return telegram_response.json()
-    
+
     # Якщо update не містить потрібних даних, нічого не робимо
     return {"detail": "No subscription event detected"}
