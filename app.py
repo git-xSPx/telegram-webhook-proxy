@@ -106,7 +106,7 @@ async def telegram_update(token: str, request: Request, response: Response):
             
             async with httpx.AsyncClient() as client:
                 telegram_response = await client.post(
-                    TELEGRAM_SEND_MESSAGE_URL, json=group_message.dict()
+                    TELEGRAM_SEND_MESSAGE_URL, json=group_message.dict(exclude_none=True)
                 )
             response.status_code = telegram_response.status_code
             return telegram_response.json()
